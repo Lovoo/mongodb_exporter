@@ -1,11 +1,33 @@
 package collector
 
 import (
-	"github.com/dcu/mongodb_exporter/shared"
+	"time"
+
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	"time"
+)
+
+var (
+	instanceUptimeSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Subsystem: "instance",
+		Name:      "uptime_seconds",
+		Help:      "The value of the uptime field corresponds to the number of seconds that the mongos or mongod process has been active.",
+	})
+	instanceUptimeEstimateSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Subsystem: "instance",
+		Name:      "uptime_estimate_seconds",
+		Help:      "uptimeEstimate provides the uptime as calculated from MongoDB's internal course-grained time keeping system.",
+	})
+	instanceLocalTime = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Subsystem: "instance",
+		Name:      "local_time",
+		Help:      "The localTime value is the current time, according to the server, in UTC specified in an ISODate format.",
+	})
 )
 
 // ServerStatus keeps the data returned by the serverStatus() method.
@@ -32,110 +54,124 @@ type ServerStatus struct {
 
 	Network *NetworkStats `bson:"network"`
 
-	Opcounters     *OpcountersStats `bson:"opcounters"`
-	OpcountersRepl *OpcountersStats `bson:"opcountersRepl"`
-	Mem            *MemStats        `bson:"mem"`
-	Metrics        *MetricsStats    `bson:"metrics"`
+	Opcounters     *OpcountersStats     `bson:"opcounters"`
+	OpcountersRepl *OpcountersReplStats `bson:"opcountersRepl"`
+	Mem            *MemStats            `bson:"mem"`
+	Metrics        *MetricsStats        `bson:"metrics"`
 
 	Cursors *Cursors `bson:"cursors"`
 }
 
-// Export exports the given groupName to be consumed by prometheus.
-func (status *ServerStatus) Export(groupName string) {
-	group := shared.FindOrCreateGroup(groupName)
-
-	group.Export("uptime_seconds", status.Uptime)
-	group.Export("uptime_estimate_seconds", status.Uptime)
-	group.Export("local_time", float64(status.LocalTime.Unix()))
+// Export exports the server status to be consumed by prometheus.
+func (status *ServerStatus) Export(ch chan<- prometheus.Metric) {
+	instanceUptimeSeconds.Set(status.Uptime)
+	instanceUptimeEstimateSeconds.Set(status.Uptime)
+	instanceLocalTime.Set(float64(status.LocalTime.Unix()))
+	instanceUptimeSeconds.Collect(ch)
+	instanceUptimeEstimateSeconds.Collect(ch)
+	instanceLocalTime.Collect(ch)
 
 	if status.Asserts != nil {
-		exportData(status.Asserts, "asserts")
+		status.Asserts.Export(ch)
 	}
-
 	if status.Dur != nil {
-		exportData(status.Dur, "durability")
+		status.Dur.Export(ch)
 	}
-
 	if status.BackgroundFlushing != nil {
-		exportData(status.BackgroundFlushing, "background_flushing")
+		status.BackgroundFlushing.Export(ch)
 	}
-
 	if status.Connections != nil {
-		exportData(status.Connections, "connections")
+		status.Connections.Export(ch)
 	}
-
 	if status.ExtraInfo != nil {
-		exportData(status.ExtraInfo, "extra_info")
+		status.ExtraInfo.Export(ch)
 	}
-
 	if status.GlobalLock != nil {
-		exportData(status.GlobalLock, "global_lock")
+		status.GlobalLock.Export(ch)
 	}
-
 	if status.IndexCounter != nil {
-		exportData(status.IndexCounter, "index_counters")
+		status.IndexCounter.Export(ch)
 	}
-
 	if status.Network != nil {
-		exportData(status.Network, "network")
+		status.Network.Export(ch)
 	}
-
 	if status.Opcounters != nil {
-		exportData(status.Opcounters, "op_counters")
+		status.Opcounters.Export(ch)
 	}
-
 	if status.OpcountersRepl != nil {
-		exportData(status.OpcountersRepl, "op_counters_repl")
+		status.OpcountersRepl.Export(ch)
 	}
-
 	if status.Mem != nil {
-		exportData(status.Mem, "memory")
+		status.Mem.Export(ch)
 	}
-
 	if status.Locks != nil {
-		exportData(status.Locks, "locks")
+		status.Locks.Export(ch)
 	}
-
 	if status.Metrics != nil {
-		exportData(status.Metrics, "metrics")
+		status.Metrics.Export(ch)
 	}
-
 	if status.Cursors != nil {
-		exportData(status.Cursors, "cursors")
+		status.Cursors.Export(ch)
 	}
 }
 
-func exportData(exportable shared.Exportable, groupName string) {
-	if !shared.EnabledGroups[groupName] {
-		// disabled group
-		glog.Infof("Group is not enabled: %s", groupName)
-		return
-	}
+// Describe describes the server status for prometheus.
+func (status *ServerStatus) Describe(ch chan<- *prometheus.Desc) {
+	instanceUptimeSeconds.Describe(ch)
+	instanceUptimeEstimateSeconds.Describe(ch)
+	instanceLocalTime.Describe(ch)
 
-	exportable.Export(groupName)
+	if status.Asserts != nil {
+		status.Asserts.Describe(ch)
+	}
+	if status.Dur != nil {
+		status.Dur.Describe(ch)
+	}
+	if status.BackgroundFlushing != nil {
+		status.BackgroundFlushing.Describe(ch)
+	}
+	if status.Connections != nil {
+		status.Connections.Describe(ch)
+	}
+	if status.ExtraInfo != nil {
+		status.ExtraInfo.Describe(ch)
+	}
+	if status.GlobalLock != nil {
+		status.GlobalLock.Describe(ch)
+	}
+	if status.IndexCounter != nil {
+		status.IndexCounter.Describe(ch)
+	}
+	if status.Network != nil {
+		status.Network.Describe(ch)
+	}
+	if status.Opcounters != nil {
+		status.Opcounters.Describe(ch)
+	}
+	if status.OpcountersRepl != nil {
+		status.OpcountersRepl.Describe(ch)
+	}
+	if status.Mem != nil {
+		status.Mem.Describe(ch)
+	}
+	if status.Locks != nil {
+		status.Locks.Describe(ch)
+	}
+	if status.Metrics != nil {
+		status.Metrics.Describe(ch)
+	}
+	if status.Cursors != nil {
+		status.Cursors.Describe(ch)
+	}
 }
 
 // GetServerStatus returns the server status info.
-func GetServerStatus(uri string) *ServerStatus {
+func GetServerStatus(session *mgo.Session) *ServerStatus {
 	result := &ServerStatus{}
-	session, err := mgo.Dial(uri)
-	if err != nil {
-		glog.Errorf("Cannot connect to server using url: %s", uri)
-		return nil
-	}
-
-	session.SetMode(mgo.Eventual, true)
-	session.SetSocketTimeout(0)
-	defer func() {
-		glog.Info("Closing connection to database.")
-		session.Close()
-	}()
-
-	err = session.DB("admin").Run(bson.D{{"serverStatus", 1}, {"recordStats", 0}}, result)
+	err := session.DB("admin").Run(bson.D{{"serverStatus", 1}, {"recordStats", 0}}, result)
 	if err != nil {
 		glog.Error("Failed to get server status.")
 		return nil
 	}
-
 	return result
 }

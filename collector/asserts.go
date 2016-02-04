@@ -1,9 +1,18 @@
 package collector
 
 import (
-	"github.com/dcu/mongodb_exporter/shared"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	assertsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Name:      "asserts_total",
+		Help:      "The asserts document reports the number of asserts on the database. While assert errors are typically uncommon, if there are non-zero values for the asserts, you should check the log file for the mongod process for more information. In many cases these errors are trivial, but are worth investigating.",
+	}, []string{"type"})
+)
+
+// AssertsStats has the assets metrics
 type AssertsStats struct {
 	Regular   float64 `bson:"regular"`
 	Warning   float64 `bson:"warning"`
@@ -12,12 +21,17 @@ type AssertsStats struct {
 	Rollovers float64 `bson:"rollovers"`
 }
 
-func (asserts *AssertsStats) Export(groupName string) {
-	group := shared.FindOrCreateGroup(groupName + "_total")
+// Export exports the metrics to prometheus.
+func (asserts *AssertsStats) Export(ch chan<- prometheus.Metric) {
+	assertsTotal.WithLabelValues("regular").Set(asserts.Regular)
+	assertsTotal.WithLabelValues("warning").Set(asserts.Warning)
+	assertsTotal.WithLabelValues("msg").Set(asserts.Msg)
+	assertsTotal.WithLabelValues("user").Set(asserts.User)
+	assertsTotal.WithLabelValues("rollovers").Set(asserts.Rollovers)
+	assertsTotal.Collect(ch)
+}
 
-	group.Export("regular", asserts.Regular)
-	group.Export("warning", asserts.Warning)
-	group.Export("msg", asserts.Msg)
-	group.Export("user", asserts.User)
-	group.Export("rollovers", asserts.Rollovers)
+// Describe describes the metrics for prometheus
+func (asserts *AssertsStats) Describe(ch chan<- *prometheus.Desc) {
+	assertsTotal.Describe(ch)
 }
